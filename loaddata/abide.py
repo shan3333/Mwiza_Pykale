@@ -13,23 +13,22 @@ import numpy as np
 import glob
 
 from nilearn import datasets
+from prepdata.connectivity_feature import get_timeseries, subject_connectivity, get_networks
 
 class ABIDE:
     """
-    ABIDE cpac Dataset.
-    Auto-downloads the dataset and provide the torch Dataset API.
+    ABIDE Dataset.
+    Auto-downloads the dataset.
 
     Args:
         root (str): path to directory where the ABIDE folder will be created (or exists.)
-        pipeline (str): default: cpac
+        subject_IDs_root (str): root of subject_IDs.txt.
+        pipeline (str): defaults to cpac
             Pipeline to preprocess ABIDE data. Available options are ccs, cpac, dparsf and niak.
-        atlas (str): default: cc200
+        atlas (str): defaults to cc200
             Brain parcellation atlas. Options: ho, cc200 and cc400.
-        download (str2bool): default: True
+        download (str2bool): defaults to True
             Dowload data.
-        subject_IDs_root (str): 
-            Root of subject_IDs.txt.
-
     """
     def __init__(
         self,
@@ -38,6 +37,7 @@ class ABIDE:
         pipeline='cpac',
         atlas='cc200',
         download=True,
+        connectivity='correlation'
     ):
         """Init ABIDE dataset."""
         super(ABIDE, self).__init__()
@@ -46,13 +46,19 @@ class ABIDE:
         self.pipeline = pipeline
         self.atlas = atlas
         self.subject_IDs_root = subject_IDs_root
+        self.subject_IDs = self.get_ids().tolist()
 
+        # download data
         if download:
             self.download()
         
         if not self._check_exists():
             raise RuntimeError("Dataset not found." + " You can use download=True to download it")
-    
+        
+        # compute and save connectivity matrices
+        time_series = get_timeseries(self.subject_IDs, self.atlas)
+        subject_connectivity(time_series, self.subject_IDs, self.atlas, connectivity)
+
 
     def _check_exists(self):
         return os.path.exists(self.data_folder)
@@ -135,17 +141,14 @@ class ABIDE:
         shutil.copyfile(self.subject_IDs_root, os.path.join(self.data_folder, 'subject_IDs.txt'))
 
         # Download database files
-        # datasets.fetch_abide_pcp(data_dir=self.root, pipeline=self.pipeline,
-                                # band_pass_filtering=True, global_signal_regression=False, derivatives=files, quality_checked=False)
+        datasets.fetch_abide_pcp(data_dir=self.root, pipeline=self.pipeline,
+                                band_pass_filtering=True, global_signal_regression=False, derivatives=files, quality_checked=False)
 
         # process and save as files
         logging.info("Processing...")
 
-        subject_IDs = self.get_ids()
-        subject_IDs = subject_IDs.tolist()
-
         # Create a folder for each subject
-        for s, fname in zip(subject_IDs, self.fetch_filenames(subject_IDs, files[0], self.atlas)):
+        for s, fname in zip(self.subject_IDs, self.fetch_filenames(self.subject_IDs, files[0], self.atlas)):
                 subject_folder = os.path.join(self.data_folder, s)     
                 if not os.path.exists(subject_folder):
                         os.mkdir(subject_folder)
@@ -159,7 +162,7 @@ class ABIDE:
                                 shutil.move(base + filemapping[fl], subject_folder)
 
         # Get class labels
-        labels = self.get_labels(subject_IDs)
+        labels = self.get_labels(self.subject_IDs)
         # Save class labels
         with open(os.path.join(self.data_folder, 'subject_labels.txt'), "w") as f:
                 print(labels, file=f)
