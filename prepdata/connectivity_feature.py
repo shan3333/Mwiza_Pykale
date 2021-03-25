@@ -10,7 +10,7 @@ import numpy as np
 from nilearn import connectome
 import scipy.io as sio
 
-def get_timeseries(self, subject_list, atlas_name, data_folder, silence=False):
+def get_timeseries(self, subject_IDs, atlas_name, data_folder, silence=False):
     """
         subject_list : list of short subject IDs in string format
         atlas_name   : the atlas based on which the timeseries are generated e.g. aal, cc200
@@ -19,8 +19,8 @@ def get_timeseries(self, subject_list, atlas_name, data_folder, silence=False):
     """
 
     timeseries = []
-    for i in range(len(subject_list)):
-        subject_folder = os.path.join(data_folder, subject_list[i])
+    for i in range(len(subject_IDs)):
+        subject_folder = os.path.join(data_folder, subject_IDs[i])
         ro_file = [f for f in os.listdir(subject_folder) if f.endswith('_rois_' + atlas_name + '.1D')]
         fl = os.path.join(subject_folder, ro_file[0])
         if silence != True:
@@ -29,15 +29,15 @@ def get_timeseries(self, subject_list, atlas_name, data_folder, silence=False):
 
     return timeseries
 
-def subject_connectivity(self, timeseries, subjects, atlas_name, kind, iter_no='', seed=1234, validation_ext='10CV', n_subjects='', save=True, save_path=data_folder):
+def subject_connectivity(self, timeseries, subjects_IDs, atlas_name, kind, iter_no='', seed=1234, validation_ext='10CV', n_subjects='', save=True, data_folder):
     """
         timeseries   : timeseries table for subject (timepoints x regions)
-        subjects     : subject IDs
+        subjects_IDs     : subject IDs
         atlas_name   : name of the parcellation atlas used
         kind         : the kind of connectivity to be used, e.g. lasso, partial correlation, correlation
         iter_no      : tangent connectivity iteration number for cross validation evaluation
         save         : save the connectivity matrix to a file
-        save_path    : specify path to save the matrix if different from subject folder
+        data_folder    : specify path to save the matrix if different from subject folder
     returns:
         connectivity : connectivity matrix (regions x regions)
     """
@@ -61,22 +61,22 @@ def subject_connectivity(self, timeseries, subjects, atlas_name, kind, iter_no='
     if save:
         if kind not in  ['TPE', 'TE']:
             for i, subj_id in enumerate(subjects):
-                subject_file = os.path.join(save_path, subj_id,
+                subject_file = os.path.join(data_folder, subj_id,
                                             subj_id + '_' + atlas_name + '_' + kind.replace(' ', '_') + '.mat')
                 sio.savemat(subject_file, {'connectivity': connectivity[i]})
             return connectivity
         else:
             for i, subj_id in enumerate(subjects):
-                subject_file = os.path.join(save_path, subj_id,
+                subject_file = os.path.join(data_folder, subj_id,
                                 subj_id + '_' + atlas_name + '_' + kind.replace(' ', '_') + '_' + str(iter_no) + '_' + str(seed) + '_' + validation_ext + str(n_subjects) + '.mat')
                 sio.savemat(subject_file, {'connectivity': connectivity[i]})  
             return connectivity_fit
 
 
 # Load precomputed fMRI connectivity networks
-def get_networks(subject_list, kind, data_folder, iter_no='', seed=1234, validation_ext='10CV', n_subjects='', atlas_name="aal", variable='connectivity'):
+def get_networks(subject_IDs, kind, data_folder, iter_no='', seed=1234, validation_ext='10CV', n_subjects='', atlas_name="aal", variable='connectivity'):
     """
-        subject_list : list of subject IDs
+        subject_IDs : list of subject IDs
         kind         : the kind of connectivity to be used, e.g. lasso, partial correlation, correlation
         atlas_name   : name of the parcellation atlas used
         variable     : variable name in the .mat file that has been used to save the precomputed networks
@@ -85,7 +85,7 @@ def get_networks(subject_list, kind, data_folder, iter_no='', seed=1234, validat
     """
 
     all_networks = []
-    for subject in subject_list:
+    for subject in subject_IDs:
         if len(kind.split()) == 2:
             kind = '_'.join(kind.split())
         if kind not in ['TPE', 'TE']:
