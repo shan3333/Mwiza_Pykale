@@ -1,6 +1,5 @@
 """
-Dataset setting and data loader for ABIDE, from
-http://preprocessed-connectomes-project.org/abide/
+Feature ranking for Visualisation.
 Reference: https://github.com/kundaMwiza/fMRI-site-adaptation/blob/master/Biomarker_study/Consistency%20study.ipynb
 
 """

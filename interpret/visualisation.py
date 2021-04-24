@@ -1,10 +1,10 @@
 """
-Dataset setting and data loader for ABIDE, from
-http://preprocessed-connectomes-project.org/abide/
+Top ranked feature visualisation.
 Reference: https://github.com/kundaMwiza/fMRI-site-adaptation/blob/master/Biomarker_study/Consistency%20study.ipynb
 
 """
 import numpy as np
+import pandas as pd
 from nilearn import plotting
 from matplotlib import pyplot as plt
 from matplotlib.axes._axes import _log as matplotlib_axes_logger
@@ -16,7 +16,14 @@ class Visualisation:
     Visualisation for ranking features
 
     Args:
-        
+        atlas_coords: atlas coordinations
+        rank_df: top k ranked feature dataframe
+        pos_rank_df: top k ranked positive feature dataframe
+        neg_rank_df: top k ranked negative feature dataframe
+        num: number of features
+        abs_rank: true for ranking absolute values of features, 
+                  false for positive and negative values of features
+                  (default: true)
     """
     def __init__(
         self,
