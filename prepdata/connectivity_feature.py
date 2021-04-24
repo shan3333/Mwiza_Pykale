@@ -10,7 +10,7 @@ import numpy as np
 from nilearn import connectome
 import scipy.io as sio
 
-def get_timeseries(self, subject_IDs, atlas_name, data_folder, silence=False):
+def get_timeseries(subject_IDs, atlas_name, data_folder, silence=False):
     """
         subject_list : list of short subject IDs in string format
         atlas_name   : the atlas based on which the timeseries are generated e.g. aal, cc200
@@ -29,15 +29,15 @@ def get_timeseries(self, subject_IDs, atlas_name, data_folder, silence=False):
 
     return timeseries
 
-def subject_connectivity(self, timeseries, subjects_IDs, atlas_name, kind, iter_no='', seed=1234, validation_ext='10CV', n_subjects='', save=True, data_folder):
+def subject_connectivity(timeseries, subjects_IDs, atlas_name, kind, data_folder, iter_no='', seed=1234, validation_ext='10CV', n_subjects='', save=True):
     """
         timeseries   : timeseries table for subject (timepoints x regions)
         subjects_IDs     : subject IDs
         atlas_name   : name of the parcellation atlas used
         kind         : the kind of connectivity to be used, e.g. lasso, partial correlation, correlation
+        data_folder    : specify path to save the matrix if different from subject folder
         iter_no      : tangent connectivity iteration number for cross validation evaluation
         save         : save the connectivity matrix to a file
-        data_folder    : specify path to save the matrix if different from subject folder
     returns:
         connectivity : connectivity matrix (regions x regions)
     """
