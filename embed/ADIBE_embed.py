@@ -1,19 +1,18 @@
-# atlas = 'cc200', model = 'MIDA', algorithm = 'Ridge', phenotypes = True, KHSIC = True
-# seed = 123, connectivity = 'TPE', leave_one_out = False, filename = 'tangent'
-# ensemble = False, validation_ext = '10CV'
 from sklearn.model_selection import StratifiedKFold
 import os
 import numpy as np
 import time
 import sklearn
+from sklearn.metrics import accuracy_score
 from nilearn import connectome
+import scipy.stats as sc
 import scipy.io as sio
 from numpy.linalg import multi_dot
 from sklearn.linear_model import LogisticRegression
 import sklearn.svm as svm
 from sklearn.linear_model import RidgeClassifier
 from sklearn.model_selection import GridSearchCV
-from prepdata import xxxxxx as Reader
+from prepdata import connectivity_feature as Reader
 
 
 class MIDA:
@@ -172,15 +171,16 @@ class TrainABIDE:
 
     # Process timeseries for tangent train/test split
     def process_timeseries(self, subject_IDs, train_ind, test_ind, atlas, connectivity, k, seed, validation_ext):
-        timeseries = Reader.get_timeseries(subject_IDs, atlas, silence=True)
+        timeseries = Reader.get_timeseries(subject_IDs, atlas, self.data_folder, silence=True)
         train_timeseries = [timeseries[i] for i in train_ind]
         subject_IDs_train = [subject_IDs[i] for i in train_ind]
         test_timeseries = [timeseries[i] for i in test_ind]
         subject_IDs_test = [subject_IDs[i] for i in test_ind]
 
         print('computing tangent connectivity features..')
-        transformer = Reader.subject_connectivity(train_timeseries, subject_IDs_train, atlas, connectivity, k, seed,
-                                                  validation_ext, n_subjects=len(self.subject_IDs))
+        transformer = Reader.subject_connectivity(train_timeseries, subject_IDs_train, atlas, connectivity,
+                                                  self.data_folder, k, seed, validation_ext,
+                                                  n_subjects=len(self.subject_IDs))
         test_data_save = self.process_test_data(test_timeseries, transformer, subject_IDs_test, atlas, connectivity,
                                                 k, seed, validation_ext)
 
@@ -257,7 +257,6 @@ class TrainABIDE:
         atlas (str): Atlas for network construction (node definition).
                 options: ho, cc200, cc400, default: cc200.
         phenotypes (boolean): Add phenotype features. default: True.
-        :return:
         """
         results_acc = []
         results_auc = []
@@ -285,14 +284,16 @@ class TrainABIDE:
             if connectivity in ['TPE', 'TE']:
                 try:
                     features = Reader.get_networks(self.subject_IDs, iter_no=k, seed=seed, validation_ext='10CV',
-                                                   kind=connectivity, n_subjects=num_subjects, atlas_name=atlas)
+                                                   kind=connectivity, n_subjects=num_subjects, atlas_name=atlas,
+                                                   data_folder=self.data_folder)
                 except:
                     print("Tangent features not found. reloading timeseries data")
                     time.sleep(10)
                     self.process_timeseries(self.subject_IDs, train_ind, test_ind, atlas, connectivity, k, seed,
                                             '10CV')
                     features = Reader.get_networks(self.subject_IDs, iter_no=k, seed=seed, validation_ext='10CV',
-                                                   kind=connectivity, n_subjects=num_subjects, atlas_name=atlas)
+                                                   kind=connectivity, n_subjects=num_subjects, atlas_name=atlas,
+                                                   data_folder=self.data_folder)
 
             if self.model == 'MIDA':
                 domain_ft = MIDA.site_information_mat(phenotype_raw, num_subjects, self.num_domains)
@@ -344,4 +345,228 @@ class TrainABIDE:
 
         return results_acc, results_auc, features, domain_ft
 
+    def leave_one_site_out_ensemble(self, phenotype_ft, phenotype_raw, seed=123, atlas='cc200', phenotypes=True):
+        """
+            phenotype_ft: construct phenotype feature vectors.
+            phenotype_raw: Source phenotype information and preprocess phenotypes.
+            seed (int): Seed for random initialisation, set to 123 means no seed, default:123
+            atlas (str): Atlas for network construction (node definition).
+                        options: ho, cc200, cc400, default: cc200.
+            phenotypes (boolean): Add phenotype features. default: True.
+        """
+
+        results_acc = []
+        results_auc = []
+
+        # Number of subjects for binary classification
+        num_subjects = len(self.subject_IDs)
+
+        # Initialise variables for class labels and acquisition sites
+        y_data = np.zeros([num_subjects, self.num_classes])
+        y = np.zeros([num_subjects, 1])
+
+        all_pred_acc = np.zeros(y.shape)
+        all_pred_auc = np.zeros(y.shape)
+
+        features_c = Reader.get_networks(self.subject_IDs, iter_no='', kind='correlation', atlas_name=atlas)
+        connectivities = {0: 'correlation', 1: 'TPE', 2: 'TE'}
+
+        for i in range(self.num_domains):
+            k = i
+            train_ind = np.where(phenotype_raw[:, 1] != i)[0]
+            test_ind = np.where(phenotype_raw[:, 1] == i)[0]
+
+            # load tangent pearson features
+            try:
+                features_t = Reader.get_networks(self.subject_IDs, iter_no=k, seed=seed, validation_ext='LOCV',
+                                                 kind='TPE', n_subjects=num_subjects, atlas_name=atlas,
+                                                 data_folder=self.data_folder)
+            except:
+                print("Tangent features not found. reloading timeseries data")
+                time.sleep(10)
+                connectivity = 'TPE'
+                self.process_timeseries(self.subject_IDs, train_ind, test_ind, atlas, connectivity, k, seed, 'LOCV')
+                features_t = Reader.get_networks(self.subject_IDs, iter_no=k, seed=seed, validation_ext='LOCV',
+                                                 kind='TPE', n_subjects=num_subjects, atlas_name=atlas,
+                                                 data_folder=self.data_folder)
+
+            # load tangent timeseries features
+            try:
+                features_tt = Reader.get_networks(self.subject_IDs, iter_no=k, seed=seed, validation_ext='LOCV',
+                                                  kind='TE', n_subjects=num_subjects, atlas_name=atlas,
+                                                  data_folder=self.data_folder)
+            except:
+                print("Tangent features not found. reloading timeseries data")
+                time.sleep(10)
+                connectivity = 'TE'
+                self.process_timeseries(self.subject_IDs, train_ind, test_ind, atlas, connectivity, k, seed, 'LOCV')
+                features_tt = Reader.get_networks(self.subject_IDs, iter_no=k, seed=seed, validation_ext='LOCV',
+                                                  kind='TE', n_subjects=num_subjects, atlas_name=atlas,
+                                                  data_folder=self.data_folder)
+
+            # all loaded features
+            features = [features_c, features_t, features_tt]
+
+            all_best_models = []
+            x_data_ft = []
+            if self.model == 'MIDA':
+                domain_ft = MIDA.site_information_mat(phenotype_raw, num_subjects, self.num_domains)
+                for ft in range(3):
+                    best_model = self.grid_search(phenotypes, seed, train_ind, features[ft], y,
+                                                  phenotype_ft=phenotype_ft, domain_ft=domain_ft)
+                    print('for', connectivities[ft], ', best parameters from 5CV grid search are: \n', best_model)
+                    MIDA_model = MIDA(features[ft], domain_ft, mu=best_model['mu'], h=best_model['h'], labels=False)
+                    x_data = MIDA_model.cal_MIDA()
+                    best_model.pop('mu')
+                    best_model.pop('h')
+                    best_model.pop('acc')
+                    all_best_models.append(best_model)
+                    x_data_ft.append(x_data)
+
+            else:
+                for ft in range(3):
+                    best_model = self.grid_search(phenotypes, seed, train_ind, features[ft], y)
+                    print('best parameters from 5CV grid search are: \n', best_model)
+                    best_model.pop('acc')
+                    all_best_models.append(best_model)
+                    x_data_ft.append(features[ft])
+
+            algs = []
+            preds_binary = []
+            preds_decision = []
+
+            # fit and compute predictions from all three models
+            for ft in range(3):
+                if phenotypes == True:
+                    x_data = np.concatenate([x_data, phenotype_ft], axis=1)
+
+                if self.algorithm == 'LR':
+                    clf = LogisticRegression(random_state=seed, solver='lbfgs', **all_best_models[ft])
+                elif self.algorithm == 'SVM':
+                    clf = svm.SVC(kernel='linear', random_state=seed, **all_best_models[ft])
+                else:
+                    clf = RidgeClassifier(random_state=seed, **all_best_models[ft])
+
+                algs.append(clf.fit(x_data_ft[ft][train_ind], y[train_ind].ravel()))
+                preds_binary.append(clf.predict(x_data_ft[ft][test_ind]))
+                preds_decision.append(clf.decision_function(x_data_ft[ft][test_ind]))
+
+            # mode prediciton
+            mode_predictions = sc.mode(np.hstack([preds_binary[j][np.newaxis].T for j in range(3)]), axis=1)[0].ravel()
+            all_pred_acc[test_ind, :] = mode_predictions[:, np.newaxis]
+
+            # Compute the accuracy
+            lin_acc = accuracy_score(y[test_ind].ravel(), mode_predictions)
+
+            # mean decision score
+            mean_predictions = np.hstack([preds_decision[j][:, np.newaxis] for j in range(3)]).mean(axis=1)
+            all_pred_auc[test_ind, :] = mean_predictions[:, np.newaxis]
+
+            # Compute the AUC
+            lin_auc = sklearn.metrics.roc_auc_score(y[test_ind], mean_predictions)
+
+            # append accuracy and AUC to respective lists
+            results_acc.append(lin_acc)
+            results_auc.append(lin_auc)
+            print("-" * 100)
+            print("Fold number: %d" % k)
+            print("Linear Accuracy: " + str(lin_acc))
+            print("Linear AUC: " + str(lin_auc))
+            print("-" * 100)
+
+        return results_acc, results_auc, features, domain_ft
+
+    def leave_one_site_out(self, phenotype_ft, phenotype_raw, seed=123, connectivity='TPE', atlas='cc200', phenotypes=True):
+        """
+            phenotype_ft: construct phenotype feature vectors.
+            phenotype_raw: Source phenotype information and preprocess phenotypes.
+            seed (int): Seed for random initialisation, set to 123 means no seed, default:123
+            connectivity (str): Type of connectivity used for network construction.
+                        options: correlation, TE(tangent embedding), TPE(tangent pearson embedding), default: TPE.
+            atlas (str): Atlas for network construction (node definition).
+                        options: ho, cc200, cc400, default: cc200.
+            phenotypes (boolean): Add phenotype features. default: True.
+        """
+        results_acc = []
+        results_auc = []
+
+        # Number of subjects for binary classification
+        num_subjects = len(self.subject_IDs)
+
+        # Initialise variables for class labels and acquisition sites
+        y_data = np.zeros([num_subjects, self.num_classes])
+        y = np.zeros([num_subjects, 1])
+
+        all_pred_acc = np.zeros(y.shape)
+        all_pred_auc = np.zeros(y.shape)
+
+        for i in range(self.num_domains):
+            k = i
+            train_ind = np.where(phenotype_raw[:, 1] != i)[0]
+            test_ind = np.where(phenotype_raw[:, 1] == i)[0]
+
+            if connectivity in ['TPE', 'TE']:
+                try:
+                    features = Reader.get_networks(self.subject_IDs, iter_no=k, seed=seed, validation_ext='LOCV',
+                                                   kind=connectivity, n_subjects=num_subjects, atlas_name=atlas,
+                                                   data_folder=self.data_folder)
+                except:
+                    print("Tangent features not found. reloading timeseries data")
+                    time.sleep(10)
+                    self.process_timeseries(self.subject_IDs, train_ind, test_ind, atlas, connectivity, k, seed, 'LOCV')
+                    features = Reader.get_networks(self.subject_IDs, iter_no=k, seed=seed, validation_ext='LOCV',
+                                                   kind=connectivity, n_subjects=num_subjects, atlas_name=atlas,
+                                                   data_folder=self.data_folder)
+
+            if self.model == 'MIDA':
+                domain_ft = MIDA.site_information_mat(phenotype_raw, num_subjects, self.num_domains)
+                best_model = self.grid_search(phenotypes, seed, train_ind, features, y, phenotype_ft=phenotype_ft,
+                                              domain_ft=domain_ft)
+                print('best parameters from 5CV grid search: \n', best_model)
+                MIDA_model = MIDA(features, domain_ft, mu=best_model['mu'], h=best_model['h'], labels=False)
+                x_data = MIDA_model.cal_MIDA()
+                best_model.pop('mu')
+                best_model.pop('h')
+            else:
+                best_model = self.grid_search(phenotypes, seed, train_ind, features, y, phenotype_ft=phenotype_ft)
+                print('best parameters from 5CV grid search: \n', best_model)
+                x_data = features
+
+            if phenotypes == True:
+                x_data = np.concatenate([x_data, phenotype_ft], axis=1)
+
+            # Remove accuracy key from best model dictionary
+            best_model.pop('acc')
+
+            # Set classifier
+            if self.algorithm == 'LR':
+                clf = LogisticRegression(random_state=seed, solver='lbfgs', **best_model)
+            elif self.algorithm == 'SVM':
+                clf = svm.SVC(random_state=seed, kernel='linear', **best_model)
+            else:
+                clf = RidgeClassifier(random_state=seed, **best_model)
+
+            # Fit classifier
+            clf.fit(x_data[train_ind, :], y[train_ind].ravel())
+
+            # Compute the accuracy
+            lin_acc = clf.score(x_data[test_ind, :], y[test_ind].ravel())
+            y_pred = clf.predict(x_data[test_ind, :])
+            all_pred_acc[test_ind, :] = y_pred[:, np.newaxis]
+
+            # Compute the AUC
+            pred = clf.decision_function(x_data[test_ind, :])
+            all_pred_auc[test_ind, :] = pred[:, np.newaxis]
+            lin_auc = sklearn.metrics.roc_auc_score(y[test_ind], pred)
+
+            # append accuracy and AUC to respective lists
+            results_acc.append(lin_acc)
+            results_auc.append(lin_auc)
+            print("-" * 100)
+            print("Fold number: %d" % k)
+            print("Linear Accuracy: " + str(lin_acc))
+            print("Linear AUC: " + str(lin_auc))
+            print("-" * 100)
+
+        return results_acc, results_auc, features, domain_ft
 
