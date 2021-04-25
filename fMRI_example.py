@@ -43,18 +43,18 @@ def main():
     print('Arguments: \n', args)
 
     # load data
-    subject_IDs = []
+    subject_IDs = [] # =======================
     num_classes = 2
-    labels = dict()
-    data_folder = ''
+    labels = dict() # =======================
+    data_folder = ''  # =======================
     seed = args.seed                    # seed for random initialisation
 
     # prepdata
-    num_domains = 0
+    num_domains = 0  # =======================
     model = args.model                  # MIDA, SMIDA or raw
     algorithm = args.algorithm
-    phenotype_ft = []
-    phenotype_raw = []
+    phenotype_ft = []  # =======================
+    phenotype_raw = []  # =======================
     connectivity = args.connectivity    # Type of connectivity used for network construction
     atlas = args.atlas                  # Atlas for network construction
     phenotypes = args.phenotypes        # Add phenotype features
